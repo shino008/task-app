@@ -87,6 +87,7 @@
     </script>
 </head>
 
+
 <body class="selection:bg-blue-500 selection:text-white transition-colors duration-500">
     <div id="root"></div>
 
@@ -158,6 +159,8 @@
         const CalendarDays = p => <SVGIcon d='<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/>' {...p} />;
         const Sun = p => <SVGIcon d='<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>' {...p} />;
         const Moon = p => <SVGIcon d='<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>' {...p} />;
+        const Play = p => <SVGIcon d='<polygon points="5 3 19 12 5 21 5 3"/>' {...p} />;
+        const Square = p => <SVGIcon d='<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>' {...p} />;
 
         // --- Template Configuration ---
         const ProgressIcon = ({ progress, status, className, size = 12 }) => {
@@ -203,7 +206,8 @@
                 endDate: formatDate(tomorrow),
                 tags: ['Design', 'Client L'],
                 memo: '先方の希望：寒色系、ミニマルな形状。\n納期厳守。',
-                links: ['https://dribbble.com/search/space-logo']
+                links: ['https://dribbble.com/search/space-logo'],
+                timeLog: { [formatDate(todayObj)]: 3600 }
             },
             {
                 id: 2,
@@ -218,7 +222,8 @@
                 endDate: formatDate(threeDaysLater),
                 tags: ['Research'],
                 memo: 'ファンタジー系の城を重点的に。\nピンタレストのボードを整理する。',
-                links: ['https://pinterest.com']
+                links: ['https://pinterest.com'],
+                timeLog: {}
             }
         ];
 
@@ -248,6 +253,25 @@
             const [selectedTask, setSelectedTask] = useState(null);
             const [animatingTaskIds, setAnimatingTaskIds] = useState([]);
             const [homeFilter, setHomeFilter] = useState('Active'); // 'Active' or 'Completed'
+
+            const [activeTimerTaskId, setActiveTimerTaskId] = useState(null);
+
+            useEffect(() => {
+                let interval = null;
+                if (activeTimerTaskId) {
+                    interval = setInterval(() => {
+                        setTasks(prev => prev.map(t => {
+                            if (t.id === activeTimerTaskId) {
+                                const todayStr = formatDate(new Date());
+                                const currentLog = t.timeLog || {};
+                                return { ...t, timeLog: { ...currentLog, [todayStr]: (currentLog[todayStr] || 0) + 1 } };
+                            }
+                            return t;
+                        }));
+                    }, 1000);
+                }
+                return () => clearInterval(interval);
+            }, [activeTimerTaskId]);
 
             useEffect(() => {
                 localStorage.setItem('flowtasks-data', JSON.stringify(tasks));
@@ -339,6 +363,26 @@
                 return <span className="text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-md flex-shrink-0">残り {diffDays} 日</span>;
             };
 
+            const formatTime = (sec) => {
+                if (!sec) return '0s';
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60);
+                const s = sec % 60;
+                if (h > 0) return `${h}h ${m}m ${s}s`;
+                if (m > 0) return `${m}m ${s}s`;
+                return `${s}s`;
+            };
+
+            const formatShortTime = (sec) => {
+                if (!sec) return '';
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60);
+                if (h > 0 && m > 0) return `${h}h ${m}m`;
+                if (h > 0) return `${h}h`;
+                if (m > 0) return `${m}m`;
+                return `<1m`;
+            };
+
             const formatShortDate = (dateStr) => {
                 if (!dateStr) return "-";
                 const d = new Date(dateStr);
@@ -373,7 +417,8 @@
                     endDate: formatDate(nextWeek),
                     tags: [template.name],
                     memo: '',
-                    links: []
+                    links: [],
+                    timeLog: {}
                 };
                 setTasks(prevTasks => [newTask, ...prevTasks]);
                 setSelectedTask(newTask);
@@ -396,7 +441,8 @@
                     endDate: newTaskEndDate,
                     tags: [],
                     memo: '',
-                    links: []
+                    links: [],
+                    timeLog: {}
                 };
                 setTasks(prevTasks => [newTask, ...prevTasks]);
                 setShowAddModal(false);
@@ -432,8 +478,10 @@
 
             // --- Component Views ---
 
-            const TaskItem = ({ task }) => {
+            const TaskItem = ({ task, dateContext }) => {
                 const isAnimating = animatingTaskIds.includes(task.id);
+                const displaySeconds = dateContext && task.timeLog ? task.timeLog[dateContext] : null;
+
                 return (
                     <GlassCard
                         className={`overflow-hidden cursor-pointer group relative transition-all duration-400 ease-in-out transform origin-top ${isAnimating ? 'opacity-0 scale-95 -translate-y-4' : 'opacity-100 scale-100 translate-y-0'} ${task.status === 'Completed' && !isAnimating ? 'opacity-60 grayscale-[0.3]' : ''}`}
@@ -464,6 +512,18 @@
                                         {formatShortDate(task.startDate)} - {formatShortDate(task.endDate)}
                                     </span>
                                     {getDaysRemainingText(task.endDate)}
+                                    {displaySeconds !== null && displaySeconds > 0 && (
+                                        <span className="flex items-center gap-1.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-md">
+                                            <Clock size={12} />
+                                            {formatTime(displaySeconds)}
+                                        </span>
+                                    )}
+                                    {displaySeconds === null && Object.values(task.timeLog || {}).reduce((a, b) => a + b, 0) > 0 && (
+                                        <span className="flex items-center gap-1.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-md">
+                                            <Clock size={12} />
+                                            {formatTime(Object.values(task.timeLog || {}).reduce((a, b) => a + b, 0))}
+                                        </span>
+                                    )}
                                     <span className="text-blue-600 dark:text-blue-400 uppercase tracking-wide font-bold ml-auto">
                                         {task.progress}%
                                     </span>
@@ -577,8 +637,12 @@
                 const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
                 const allDays = [...blanks, ...days];
 
-                // 選択された日に「被っている」タスクを表示
-                const tasksForDay = tasks.filter(t => isWithinInterval(displayYear, displayMonth, selectedDate, t.startDate, t.endDate));
+                // 選択された日に被っている、またはその日に作業時間が記録されているタスクを表示
+                const selectedDateStr = `${displayYear}-${String(displayMonth).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`;
+                const tasksForDay = tasks.filter(t =>
+                    isWithinInterval(displayYear, displayMonth, selectedDate, t.startDate, t.endDate) ||
+                    (t.timeLog && t.timeLog[selectedDateStr] > 0)
+                );
 
                 const prevMonth = () => {
                     const d = new Date(currentDisplayDate);
@@ -616,6 +680,10 @@
 
                                     const isSelected = d === selectedDate;
                                     const isToday = d === todayObj.getDate() && displayMonth === (todayObj.getMonth() + 1) && displayYear === todayObj.getFullYear();
+
+                                    const currentDateStr = `${displayYear}-${String(displayMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                                    const dayTasksWithTime = tasks.filter(t => t.timeLog && t.timeLog[currentDateStr] > 0);
+                                    const dayTotalSeconds = dayTasksWithTime.reduce((sum, t) => sum + t.timeLog[currentDateStr], 0);
 
                                     // Task bars logic
                                     const dayTasks = tasks.filter(t => t.status !== 'Completed' && isWithinInterval(displayYear, displayMonth, d, t.startDate, t.endDate));
@@ -686,6 +754,13 @@
                                                     </div>
                                                 )}
                                             </div>
+                                            {dayTotalSeconds > 0 && (
+                                                <div className="absolute bottom-1 w-full text-center z-10 pointer-events-none">
+                                                    <span className="bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-1.5 py-[1px] rounded-[4px] text-[8px] font-bold shadow-sm inline-block tracking-tight border border-blue-200/50 dark:border-blue-800/50 backdrop-blur-md">
+                                                        {formatShortTime(dayTotalSeconds)}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -702,7 +777,7 @@
 
                             <div className="space-y-4 animate-[slideUp_0.3s_ease-out]" key={`${displayYear}-${displayMonth}-${selectedDate}`}>
                                 {tasksForDay.length > 0 ? (
-                                    tasksForDay.map(task => <TaskItem key={task.id} task={task} />)
+                                    tasksForDay.map(task => <TaskItem key={task.id} task={task} dateContext={selectedDateStr} />)
                                 ) : (
                                     <GlassCard className="text-center py-16 bg-white/30 dark:bg-zinc-900/10 border-dashed">
                                         <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-300">
@@ -771,24 +846,56 @@
                 const task = tasks.find(t => t.id === selectedTask.id);
                 if (!task) return null;
 
+                const isActive = activeTimerTaskId === task.id;
+                const todayStr = formatDate(new Date());
+                const todaySeconds = (task.timeLog && task.timeLog[todayStr]) || 0;
+                const totalSeconds = Object.values(task.timeLog || {}).reduce((a, b) => a + b, 0);
+
                 return (
                     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-[fadeIn_0.3s_ease-out]">
                         <div className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm" onClick={() => setSelectedTask(null)} />
                         <div className={`w-full max-w-2xl h-[95vh] sm:h-[90vh] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl rounded-t-[2.5rem] sm:rounded-[2.5rem] overflow-hidden relative shadow-[0_-10px_40px_rgb(0,0,0,0.1)] flex flex-col transform transition-transform animate-[slideUp_0.4s_ease-out]`}>
 
-                            <div className={`shrink-0 h-48 w-full ${task.thumbnail} flex flex-col justify-end px-8 pb-8 pt-12 relative`}>
+                            <div className={`shrink-0 min-h-[12rem] w-full ${task.thumbnail} flex flex-col justify-end px-8 pb-8 pt-12 relative`}>
                                 <button onClick={() => setSelectedTask(null)} className="absolute top-6 right-6 w-10 h-10 bg-black/20 hover:bg-black/30 backdrop-blur-md rounded-full flex items-center justify-center text-white transition-colors">
                                     <X size={20} strokeWidth={2.5} />
                                 </button>
-                                <input
-                                    className="bg-transparent border-none text-white text-[2rem] font-black focus:ring-0 w-full p-0 placeholder:text-white/50 outline-none leading-tight"
-                                    value={task.title}
-                                    onChange={(e) => updateTaskField(task.id, 'title', e.target.value)}
-                                    placeholder="タスクタイトル..."
-                                />
-                                <div className="flex items-center gap-2 text-white/90 text-[13px] mt-3 font-semibold bg-black/20 w-fit px-3 py-1.5 rounded-lg backdrop-blur-sm">
-                                    <Zap size={14} className="fill-current text-yellow-300" />
-                                    <span>{task.steps[task.currentStep]} 工程</span>
+                                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mt-8">
+                                    <input
+                                        className="bg-transparent border-none text-white text-[2rem] font-black focus:ring-0 w-full p-0 placeholder:text-white/50 outline-none leading-tight"
+                                        value={task.title}
+                                        onChange={(e) => updateTaskField(task.id, 'title', e.target.value)}
+                                        placeholder="タスクタイトル..."
+                                    />
+                                    <button
+                                        onClick={() => setActiveTimerTaskId(isActive ? null : task.id)}
+                                        className={`shrink-0 flex items-center gap-2 px-5 py-3 rounded-2xl text-white font-bold transition-all shadow-lg active:scale-95 border-2 ${isActive ? 'bg-red-500/80 border-red-400 hover:bg-red-400 shadow-red-500/40 backdrop-blur-md border-opacity-100' : 'bg-black/20 hover:bg-black/30 border-white/20 backdrop-blur-md'}`}
+                                    >
+                                        {isActive ? (
+                                            <>
+                                                <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                                                <span className="w-16 text-left tabular-nums">{formatTime(todaySeconds)}</span>
+                                                <Square size={16} fill="currentColor" />
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Play size={16} fill="currentColor" />
+                                                <span>{todaySeconds > 0 ? "再開" : "タイマー"}</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-2 mt-4 flex-wrap">
+                                    <div className="flex items-center gap-2 text-white/90 text-[13px] font-semibold bg-black/20 w-fit px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                                        <Zap size={14} className="fill-current text-yellow-300" />
+                                        <span>{task.steps[task.currentStep]} 工程</span>
+                                    </div>
+                                    {totalSeconds > 0 && (
+                                        <div className="flex items-center gap-1.5 text-white/90 text-[13px] font-semibold bg-black/20 w-fit px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                                            <Clock size={14} className="text-white" />
+                                            <span>合計: {formatTime(totalSeconds)}</span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -971,6 +1078,19 @@
                         <NavItem active={activeTab === 'pomodoro'} onClick={() => setActiveTab('pomodoro')} icon={<Clock size={24} strokeWidth={activeTab === 'pomodoro' ? 2.5 : 2} />} label="Focus" />
                         <NavItem active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<User size={24} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />} label="Profile" />
                     </nav>
+
+                    {/* Floating Active Timer */}
+                    {activeTimerTaskId && (
+                        <div className="fixed bottom-28 right-4 sm:right-8 z-50 animate-[slideUp_0.3s_ease-out]">
+                            <button onClick={() => setActiveTimerTaskId(null)} className="flex items-center gap-2 sm:gap-3 bg-red-500/90 text-white px-4 sm:px-5 py-3 rounded-full shadow-xl shadow-red-500/30 hover:bg-red-400 active:scale-95 transition-all border border-red-400/50 backdrop-blur-xl">
+                                <div className="hidden sm:block w-2 h-2 rounded-full bg-white animate-pulse" />
+                                <span className="text-sm font-bold mt-[1px] tracking-wide tabular-nums text-center">
+                                    {formatTime(tasks.find(t => t.id === activeTimerTaskId)?.timeLog?.[formatDate(new Date())] || 0)}
+                                </span>
+                                <Square size={16} fill="currentColor" />
+                            </button>
+                        </div>
+                    )}
 
                     {/* Task Detail Modal */}
                     {renderDetail()}
