@@ -6,6 +6,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FlowTasks - Creator Task Manager</title>
 
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#3b82f6" />
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('ServiceWorker registered:', reg.scope);
+                }).catch(err => {
+                    console.log('ServiceWorker registration failed:', err);
+                });
+            });
+        }
+    </script>
+
     <!-- Setup Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -71,22 +86,7 @@
             filter: invert(0.5);
         }
     </style>
-
-    <!-- PWA Setup -->
-    <link rel="manifest" href="./manifest.json" />
-    <meta name="theme-color" content="#ffffff" />
-    <link rel="apple-touch-icon" href="./icon512.png" />
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('ServiceWorker registered:', reg))
-                    .catch(err => console.log('ServiceWorker registration failed:', err));
-            });
-        }
-    </script>
 </head>
-
 
 <body class="selection:bg-blue-500 selection:text-white transition-colors duration-500">
     <div id="root"></div>
@@ -256,22 +256,7 @@
 
             const [activeTimerTaskId, setActiveTimerTaskId] = useState(null);
 
-            useEffect(() => {
-                let interval = null;
-                if (activeTimerTaskId) {
-                    interval = setInterval(() => {
-                        setTasks(prev => prev.map(t => {
-                            if (t.id === activeTimerTaskId) {
-                                const todayStr = formatDate(new Date());
-                                const currentLog = t.timeLog || {};
-                                return { ...t, timeLog: { ...currentLog, [todayStr]: (currentLog[todayStr] || 0) + 1 } };
-                            }
-                            return t;
-                        }));
-                    }, 1000);
-                }
-                return () => clearInterval(interval);
-            }, [activeTimerTaskId]);
+
 
             useEffect(() => {
                 localStorage.setItem('flowtasks-data', JSON.stringify(tasks));
@@ -306,7 +291,19 @@
             useEffect(() => {
                 let interval = null;
                 if (timerActive && timeLeft > 0) {
-                    interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
+                    interval = setInterval(() => {
+                        setTimeLeft(t => t - 1);
+                        if (activeTimerTaskId && timerMode === 'work') {
+                            setTasks(prev => prev.map(t => {
+                                if (t.id === activeTimerTaskId) {
+                                    const todayStr = formatDate(new Date());
+                                    const currentLog = t.timeLog || {};
+                                    return { ...t, timeLog: { ...currentLog, [todayStr]: (currentLog[todayStr] || 0) + 1 } };
+                                }
+                                return t;
+                            }));
+                        }
+                    }, 1000);
                 } else if (timerActive && timeLeft === 0) {
                     // Auto switch
                     if (timerMode === 'work') {
@@ -321,7 +318,7 @@
                     try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play(); } catch (e) { }
                 }
                 return () => clearInterval(interval);
-            }, [timerActive, timeLeft, timerMode]);
+            }, [timerActive, timeLeft, timerMode, activeTimerTaskId]);
 
             const toggleTimer = () => setTimerActive(!timerActive);
             const resetTimer = () => {
@@ -513,14 +510,14 @@
                                     </span>
                                     {getDaysRemainingText(task.endDate)}
                                     {displaySeconds !== null && displaySeconds > 0 && (
-                                        <span className="flex items-center gap-1.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-md">
-                                            <Clock size={12} />
+                                        <span className="flex items-center gap-1.5 bg-white/60 dark:bg-black/40 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-xl shadow-[inset_0_2px_10px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_2px_10px_rgba(0,0,0,0.4)] backdrop-blur-md font-black tracking-widest text-[10px] tabular-nums mx-1 transition-all border border-white/50 dark:border-zinc-800/50">
+                                            <svg className="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                                             {formatTime(displaySeconds)}
                                         </span>
                                     )}
                                     {displaySeconds === null && Object.values(task.timeLog || {}).reduce((a, b) => a + b, 0) > 0 && (
-                                        <span className="flex items-center gap-1.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-md">
-                                            <Clock size={12} />
+                                        <span className="flex items-center gap-1.5 bg-white/60 dark:bg-black/40 text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-xl shadow-[inset_0_2px_10px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_2px_10px_rgba(0,0,0,0.4)] backdrop-blur-md font-black tracking-widest text-[10px] tabular-nums mx-1 transition-all border border-white/50 dark:border-zinc-800/50">
+                                            <svg className="w-3 h-3 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                                             {formatTime(Object.values(task.timeLog || {}).reduce((a, b) => a + b, 0))}
                                         </span>
                                     )}
@@ -755,8 +752,9 @@
                                                 )}
                                             </div>
                                             {dayTotalSeconds > 0 && (
-                                                <div className="absolute bottom-1 w-full text-center z-10 pointer-events-none">
-                                                    <span className="bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-1.5 py-[1px] rounded-[4px] text-[8px] font-bold shadow-sm inline-block tracking-tight border border-blue-200/50 dark:border-blue-800/50 backdrop-blur-md">
+                                                <div className="absolute bottom-0 w-full flex justify-center z-10 pointer-events-none pb-1">
+                                                    <span className="bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 px-2 py-[2px] rounded-full text-[10px] sm:text-[11px] font-black shadow-sm flex items-center justify-center gap-1 border border-blue-200 dark:border-blue-700/50 backdrop-blur-md group-hover:bg-blue-200 dark:group-hover:bg-blue-800/60 transition-colors">
+                                                        <Clock size={10} strokeWidth={2.5} />
                                                         {formatShortTime(dayTotalSeconds)}
                                                     </span>
                                                 </div>
@@ -773,6 +771,11 @@
                                     <CalendarIcon size={16} />
                                     {displayMonth}月{selectedDate}日のタスク
                                 </h3>
+                                {tasksForDay.some(t => t.timeLog && t.timeLog[selectedDateStr] > 0) && (
+                                    <span className="text-[11px] font-black tracking-widest text-blue-600 bg-white/60 border border-white/50 dark:bg-black/40 dark:border-zinc-800/50 dark:text-blue-400 px-3 py-1 rounded-xl shadow-[inset_0_2px_10px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_2px_10px_rgba(0,0,0,0.4)] backdrop-blur-md">
+                                        合計作業: {formatShortTime(tasksForDay.reduce((sum, t) => sum + (t.timeLog && t.timeLog[selectedDateStr] ? t.timeLog[selectedDateStr] : 0), 0))}
+                                    </span>
+                                )}
                             </div>
 
                             <div className="space-y-4 animate-[slideUp_0.3s_ease-out]" key={`${displayYear}-${displayMonth}-${selectedDate}`}>
@@ -802,6 +805,16 @@
                     <div className="p-6 pb-32 max-w-2xl mx-auto space-y-8 animate-[fadeIn_0.5s_ease-out] flex flex-col items-center">
                         <header className="mt-10 w-full text-center">
                             <h2 className="text-[2.5rem] font-black tracking-tight text-zinc-900 dark:text-white leading-none">Focus</h2>
+                            {activeTimerTaskId && (
+                                <div className="mt-4 flex items-center justify-center gap-2">
+                                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">
+                                        集中タスク: {tasks.find(t => t.id === activeTimerTaskId)?.title}
+                                    </span>
+                                    <button onClick={() => setActiveTimerTaskId(null)} className="text-zinc-400 hover:text-red-500 transition-colors p-1 bg-white dark:bg-zinc-800 rounded-full shadow-sm" title="紐付け解除">
+                                        <X size={14} strokeWidth={3} />
+                                    </button>
+                                </div>
+                            )}
                         </header>
 
                         <div className="flex gap-4 p-1.5 bg-white/60 dark:bg-zinc-800/50 backdrop-blur-md rounded-full shadow-sm border border-zinc-200/50 dark:border-zinc-700/50">
@@ -809,19 +822,19 @@
                             <button onClick={() => switchTimerMode('break')} className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${timerMode === 'break' ? 'bg-emerald-500 text-white shadow-md' : 'text-zinc-500 hover:bg-white/50 dark:hover:bg-zinc-700/50'}`}>Break</button>
                         </div>
 
-                        <div className="relative w-64 h-64 flex items-center justify-center mt-8">
-                            <svg className="absolute w-full h-full transform -rotate-90">
-                                <circle cx="128" cy="128" r="120" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-zinc-200 dark:text-zinc-800" />
-                                <circle cx="128" cy="128" r="120" stroke="currentColor" strokeWidth="8" fill="transparent"
-                                    strokeDasharray={120 * 2 * Math.PI}
-                                    strokeDashoffset={(120 * 2 * Math.PI) * (1 - progress / 100)}
-                                    className={`transition-all duration-1000 ease-linear ${timerMode === 'work' ? 'text-blue-500' : 'text-emerald-500'}`} />
+                        <div className="relative w-80 h-80 sm:w-96 sm:h-96 flex items-center justify-center mt-8 mb-4">
+                            <svg className="absolute w-full h-full transform -rotate-90" viewBox="0 0 256 256">
+                                <circle cx="128" cy="128" r="116" stroke="currentColor" strokeWidth="16" fill="transparent" className="text-zinc-200 dark:text-zinc-800/80" />
+                                <circle cx="128" cy="128" r="116" stroke="currentColor" strokeWidth="16" strokeLinecap="round" fill="transparent"
+                                    strokeDasharray={116 * 2 * Math.PI}
+                                    strokeDashoffset={(116 * 2 * Math.PI) * (1 - progress / 100)}
+                                    className={`transition-all duration-1000 ease-linear ${timerMode === 'work' ? 'text-blue-500 drop-shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'text-emerald-500 drop-shadow-[0_0_12px_rgba(16,185,129,0.4)]'}`} />
                             </svg>
-                            <div className="text-center z-10">
-                                <h1 className="text-[4rem] font-black tabular-nums tracking-tighter text-zinc-900 dark:text-white leading-none">
+                            <div className="text-center z-10 flex flex-col items-center">
+                                <h1 className="text-[5.5rem] sm:text-[6.5rem] font-black tabular-nums tracking-tighter text-zinc-900 dark:text-white leading-none">
                                     {m}:{s}
                                 </h1>
-                                <p className="text-sm font-black uppercase tracking-widest text-zinc-400 mt-2">{timerMode === 'work' ? 'Stay Focused' : 'Take a breath'}</p>
+                                <p className="text-sm sm:text-base font-black uppercase tracking-widest text-zinc-400 mt-2 sm:mt-4">{timerMode === 'work' ? 'Stay Focused' : 'Take a breath'}</p>
                             </div>
                         </div>
 
@@ -868,32 +881,40 @@
                                         placeholder="タスクタイトル..."
                                     />
                                     <button
-                                        onClick={() => setActiveTimerTaskId(isActive ? null : task.id)}
-                                        className={`shrink-0 flex items-center gap-2 px-5 py-3 rounded-2xl text-white font-bold transition-all shadow-lg active:scale-95 border-2 ${isActive ? 'bg-red-500/80 border-red-400 hover:bg-red-400 shadow-red-500/40 backdrop-blur-md border-opacity-100' : 'bg-black/20 hover:bg-black/30 border-white/20 backdrop-blur-md'}`}
+                                        onClick={() => {
+                                            setActiveTimerTaskId(task.id);
+                                            setActiveTab('pomodoro');
+                                            if (!timerActive) {
+                                                setTimerMode('work');
+                                                setTimeLeft(25 * 60);
+                                                setTimerActive(true);
+                                            }
+                                            setSelectedTask(null);
+                                        }}
+                                        className="relative overflow-hidden shrink-0 flex items-center gap-3 px-6 py-3.5 rounded-2xl bg-white/70 dark:bg-zinc-800/70 border border-white/80 dark:border-zinc-700/80 text-zinc-800 dark:text-white font-black transition-all hover:-translate-y-1 active:scale-95 shadow-xl backdrop-blur-xl group"
                                     >
-                                        {isActive ? (
-                                            <>
-                                                <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                                                <span className="w-16 text-left tabular-nums">{formatTime(todaySeconds)}</span>
-                                                <Square size={16} fill="currentColor" />
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Play size={16} fill="currentColor" />
-                                                <span>{todaySeconds > 0 ? "再開" : "タイマー"}</span>
-                                            </>
-                                        )}
+                                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity blur-xl"></div>
+                                        <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/40 border border-blue-100 dark:border-blue-800/50 flex items-center justify-center group-hover:bg-blue-100 dark:group-hover:bg-blue-800 transition-colors z-10 shadow-inner">
+                                            <Play size={14} className="text-blue-600 dark:text-blue-400 ml-0.5 group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors" fill="currentColor" />
+                                        </div>
+                                        <div className="flex flex-col items-start z-10 leading-none">
+                                            <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-widest font-bold mb-0.5">Start Timer</span>
+                                            <span className="text-[14px] tracking-wide text-zinc-900 dark:text-white group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors">タイマー開始</span>
+                                        </div>
                                     </button>
                                 </div>
                                 <div className="flex items-center gap-2 mt-4 flex-wrap">
-                                    <div className="flex items-center gap-2 text-white/90 text-[13px] font-semibold bg-black/20 w-fit px-3 py-1.5 rounded-lg backdrop-blur-sm">
-                                        <Zap size={14} className="fill-current text-yellow-300" />
+                                    <div className="flex items-center gap-2 text-zinc-900 dark:text-white text-[13px] font-bold bg-white/80 dark:bg-black/40 border border-white/50 dark:border-zinc-800 w-fit px-4 py-2 rounded-xl backdrop-blur-md shadow-sm">
+                                        <Zap size={16} className="fill-current text-yellow-500" />
                                         <span>{task.steps[task.currentStep]} 工程</span>
                                     </div>
                                     {totalSeconds > 0 && (
-                                        <div className="flex items-center gap-1.5 text-white/90 text-[13px] font-semibold bg-black/20 w-fit px-3 py-1.5 rounded-lg backdrop-blur-sm">
-                                            <Clock size={14} className="text-white" />
-                                            <span>合計: {formatTime(totalSeconds)}</span>
+                                        <div className="flex flex-col justify-center bg-white/60 dark:bg-black/40 border border-white/60 dark:border-zinc-800 w-fit px-5 py-2 rounded-2xl backdrop-blur-xl shadow-lg text-zinc-800 dark:text-white group cursor-default">
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400 mb-0.5 leading-none">Logged Time</span>
+                                            <div className="flex items-center gap-2 leading-none">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></div>
+                                                <span className="text-[15px] font-black tabular-nums tracking-wider">{formatTime(totalSeconds)}</span>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -1079,15 +1100,20 @@
                         <NavItem active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<User size={24} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />} label="Profile" />
                     </nav>
 
-                    {/* Floating Active Timer */}
-                    {activeTimerTaskId && (
+                    {/* Floating Pomodoro Status */}
+                    {timerActive && activeTab !== 'pomodoro' && (
                         <div className="fixed bottom-28 right-4 sm:right-8 z-50 animate-[slideUp_0.3s_ease-out]">
-                            <button onClick={() => setActiveTimerTaskId(null)} className="flex items-center gap-2 sm:gap-3 bg-red-500/90 text-white px-4 sm:px-5 py-3 rounded-full shadow-xl shadow-red-500/30 hover:bg-red-400 active:scale-95 transition-all border border-red-400/50 backdrop-blur-xl">
-                                <div className="hidden sm:block w-2 h-2 rounded-full bg-white animate-pulse" />
-                                <span className="text-sm font-bold mt-[1px] tracking-wide tabular-nums text-center">
-                                    {formatTime(tasks.find(t => t.id === activeTimerTaskId)?.timeLog?.[formatDate(new Date())] || 0)}
-                                </span>
-                                <Square size={16} fill="currentColor" />
+                            <button onClick={() => setActiveTab('pomodoro')} className={`group flex items-center gap-3 px-5 sm:px-6 py-3 sm:py-4 rounded-3xl sm:rounded-[2rem] shadow-2xl transition-all border backdrop-blur-xl ${timerMode === 'work' ? 'bg-blue-600/90 hover:bg-blue-500 shadow-blue-500/40 border-blue-400/50 text-white' : 'bg-emerald-500/90 hover:bg-emerald-400 shadow-emerald-500/40 border-emerald-400/50 text-white'}`}>
+                                <div className={`hidden sm:flex items-center justify-center w-8 h-8 rounded-full ${timerMode === 'work' ? 'bg-blue-400/30' : 'bg-emerald-400/30'} backdrop-blur-sm group-hover:scale-110 transition-transform`}>
+                                    <div className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                                </div>
+                                <div className="flex flex-col items-start leading-none gap-1 sm:gap-1.5">
+                                    <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-white/80">{timerMode === 'work' ? 'Focusing' : 'Break Time'}</span>
+                                    <span className="text-xl sm:text-2xl font-black tracking-wide tabular-nums drop-shadow-sm">
+                                        {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
+                                    </span>
+                                </div>
+                                <Clock size={20} className="ml-1 sm:ml-2 opacity-60 group-hover:opacity-100 transition-opacity" />
                             </button>
                         </div>
                     )}
