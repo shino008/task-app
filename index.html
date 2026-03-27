@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlowTasks - Creator Task Manager</title>
+
+    <!-- PWA Setup -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#3b82f6" />
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('ServiceWorker registered:', reg.scope);
+                }).catch(err => {
+                    console.log('ServiceWorker registration failed:', err);
+                });
+            });
+        }
+    </script>
+
+    <!-- Setup Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        blue: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            200: '#bfdbfe',
+                            300: '#93c5fd',
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Removed Lucide UMD import, using inline SVGs instead -->
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            background-color: #F8F9FA;
+            color: #1a1a1a;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .dark body {
+            background-color: #000;
+            color: #fff;
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        input[type="date"]::-webkit-inner-spin-button,
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.5);
+        }
+    </style>
+</head>
+
+<body class="selection:bg-blue-500 selection:text-white transition-colors duration-500">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const MemoEditor = ({ value, onChange }) => {
+            const [isEditing, setIsEditing] = useState(false);
+
+            const renderContent = (text) => {
+                if (!text) return <span className="text-zinc-400">メモやURLを追加（クリックして編集）</span>;
+                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                return text.split(urlRegex).map((part, i) => {
+                    if (part.match(urlRegex)) {
+                        return <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-500 font-bold hover:underline" onClick={e => e.stopPropagation()}>{part}</a>;
+                    }
+                    return <span key={i}>{part}</span>;
+                });
+            };
+
+            if (isEditing) {
+                return (
+                    <div className="space-y-2 animate-[fadeIn_0.2s_ease-out]">
+                        <textarea
+                            autoFocus
+                            className="w-full h-40 p-5 bg-white dark:bg-zinc-800 border-[3px] border-blue-400 rounded-[1.5rem] outline-none resize-none text-[15px] font-medium leading-relaxed dark:text-zinc-200 shadow-inner"
+                            value={value || ''}
+                            onChange={(e) => onChange(e.target.value)}
+                            onBlur={() => setIsEditing(false)}
+                            placeholder="要件やアイデア、URLなどを入力..."
+                        />
+                        <div className="text-right">
+                            <button className="bg-blue-600 text-white px-5 py-2 rounded-xl text-sm font-bold hover:bg-blue-500 shadow-md transition-all active:scale-95" onMouseDown={(e) => e.preventDefault()} onClick={() => setIsEditing(false)}>完了</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div
+                    onClick={() => setIsEditing(true)}
+                    className="w-full min-h-[8rem] p-6 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-[1.5rem] cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-all text-[15px] font-medium leading-relaxed dark:text-zinc-200 whitespace-pre-wrap shadow-[inset_0_2px_10px_rgb(0,0,0,0.02)]"
+                >
+                    {renderContent(value)}
+                </div>
+            );
+        };
+
+        // --- Inline SVG Icons ---
+        const SVGIcon = ({ d, size = 24, strokeWidth = 2, className = "", fill = "none" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} dangerouslySetInnerHTML={{ __html: d }} />
+        );
+        const Plus = p => <SVGIcon d='<path d="M5 12h14"/><path d="M12 5v14"/>' {...p} />;
+        const Search = p => <SVGIcon d='<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>' {...p} />;
+        const CalendarIcon = p => <SVGIcon d='<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>' {...p} />;
+        const CheckCircle = p => <SVGIcon d='<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>' {...p} />;
+        const Clock = p => <SVGIcon d='<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' {...p} />;
+        const ImageIcon = p => <SVGIcon d='<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>' {...p} />;
+        const LinkIcon = p => <SVGIcon d='<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>' {...p} />;
+        const FileText = p => <SVGIcon d='<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/>' {...p} />;
+        const ChevronRight = p => <SVGIcon d='<path d="m9 18 6-6-6-6"/>' {...p} />;
+        const ChevronLeft = p => <SVGIcon d='<path d="m15 18-6-6 6-6"/>' {...p} />;
+        const Layout = p => <SVGIcon d='<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="9" x2="9" y1="21" y2="9"/>' {...p} />;
+        const User = p => <SVGIcon d='<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' {...p} />;
+        const X = p => <SVGIcon d='<path d="M18 6 6 18"/><path d="m6 6 12 12"/>' {...p} />;
+        const Trash2 = p => <SVGIcon d='<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>' {...p} />;
+        const Zap = p => <SVGIcon d='<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>' {...p} />;
+        const ExternalLink = p => <SVGIcon d='<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' {...p} />;
+        const CalendarDays = p => <SVGIcon d='<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/>' {...p} />;
+        const Sun = p => <SVGIcon d='<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>' {...p} />;
+        const Moon = p => <SVGIcon d='<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>' {...p} />;
+        const Play = p => <SVGIcon d='<polygon points="5 3 19 12 5 21 5 3"/>' {...p} />;
+        const Square = p => <SVGIcon d='<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>' {...p} />;
+
+        // --- Template Configuration ---
+        const ProgressIcon = ({ progress, status, className, size = 12 }) => {
+            if (status === 'Completed' || progress >= 100) return <CheckCircle size={size} className={className} />;
+            if (progress > 0) return <SVGIcon d='<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor"/><path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" stroke="none"/>' size={size} className={className} />;
+            return <SVGIcon d='<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor"/>' size={size} className={className} />;
+        };
+        const TEMPLATES = [
+            { id: 'illu', name: 'イラスト', icon: '🎨', steps: ['ラフ', '線画', '塗り', '仕上げ'], color: 'bg-pink-500' },
+            { id: 'logo', name: 'ロゴ制作', icon: '📐', steps: ['ヒアリング', 'ラフ案', '清書', '納品'], color: 'bg-blue-500' },
+            { id: 'video', name: '動画編集', icon: '🎬', steps: ['構成', 'カット', 'テロップ', '書き出し'], color: 'bg-purple-500' },
+            { id: 'custom', name: 'カスタム', icon: '✍️', steps: ['ToDo'], color: 'bg-zinc-500' },
+        ];
+
+        // Get current dates for realistic sample data
+        const todayObj = new Date();
+        const currentYear = todayObj.getFullYear();
+        const currentMonth = todayObj.getMonth() + 1; // 1-12
+        const currentDay = todayObj.getDate();
+
+        const formatDate = (date) => {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        };
+
+        const twoDaysAgo = new Date(todayObj); twoDaysAgo.setDate(todayObj.getDate() - 2);
+        const tomorrow = new Date(todayObj); tomorrow.setDate(todayObj.getDate() + 1);
+        const threeDaysLater = new Date(todayObj); threeDaysLater.setDate(todayObj.getDate() + 3);
+
+        const INITIAL_TASKS = [
+            {
+                id: 1,
+                title: '「Lunar」プロジェクト ロゴ制作',
+                description: '宇宙をイメージした配色を検討する。',
+                thumbnail: 'bg-gradient-to-br from-indigo-500 to-purple-600',
+                status: 'Active',
+                progress: 65,
+                steps: ['ヒアリング', 'ラフ案', '清書', '納品'],
+                currentStep: 2,
+                startDate: formatDate(twoDaysAgo),
+                endDate: formatDate(tomorrow),
+                tags: ['Design', 'Client L'],
+                memo: '先方の希望：寒色系、ミニマルな形状。\n納期厳守。',
+                links: ['https://dribbble.com/search/space-logo'],
+                timeLog: { [formatDate(todayObj)]: 3600 }
+            },
+            {
+                id: 2,
+                title: '背景資料の収集',
+                description: '次回作のためのロケハン資料まとめ。',
+                thumbnail: 'bg-gradient-to-br from-emerald-400 to-teal-500',
+                status: 'In Progress',
+                progress: 30,
+                steps: ['検索', '保存', '分類'],
+                currentStep: 0,
+                startDate: formatDate(todayObj),
+                endDate: formatDate(threeDaysLater),
+                tags: ['Research'],
+                memo: 'ファンタジー系の城を重点的に。\nピンタレストのボードを整理する。',
+                links: ['https://pinterest.com'],
+                timeLog: {}
+            }
+        ];
+
+        // --- Glassmorphism UI Components ---
+        const GlassCard = ({ children, className = "", onClick }) => (
+            <div
+                onClick={onClick}
+                className={`bg-white/70 dark:bg-zinc-900/70 backdrop-blur-2xl border border-white/50 dark:border-zinc-800/50 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all active:scale-[0.98] ${className}`}
+            >
+                {children}
+            </div>
+        );
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('tasks');
+            const [tasks, setTasks] = useState(() => {
+                if (typeof window !== 'undefined') {
+                    const saved = localStorage.getItem('flowtasks-data');
+                    if (saved) {
+                        try {
+                            return JSON.parse(saved);
+                        } catch (e) { }
+                    }
+                }
+                return INITIAL_TASKS;
+            });
+            const [selectedTask, setSelectedTask] = useState(null);
+            const [animatingTaskIds, setAnimatingTaskIds] = useState([]);
+            const [homeFilter, setHomeFilter] = useState('Active'); // 'Active' or 'Completed'
+
+            const [activeTimerTaskId, setActiveTimerTaskId] = useState(null);
+
+
+
+            useEffect(() => {
+                localStorage.setItem('flowtasks-data', JSON.stringify(tasks));
+            }, [tasks]);
+
+            // Dark Mode state
+            const [isDarkMode, setIsDarkMode] = useState(() => {
+                if (typeof window !== 'undefined') {
+                    const saved = localStorage.getItem('flowtasks-theme');
+                    if (saved) return saved === 'dark';
+                    return document.documentElement.classList.contains('dark') || window.matchMedia('(prefers-color-scheme: dark)').matches;
+                }
+                return false;
+            });
+
+            // Pomodoro state
+            const [timeLeft, setTimeLeft] = useState(25 * 60);
+            const [timerActive, setTimerActive] = useState(false);
+            const [timerMode, setTimerMode] = useState('work'); // 'work' or 'break'
+
+            useEffect(() => {
+                const html = document.documentElement;
+                if (isDarkMode) {
+                    html.classList.add('dark');
+                    localStorage.setItem('flowtasks-theme', 'dark');
+                } else {
+                    html.classList.remove('dark');
+                    localStorage.setItem('flowtasks-theme', 'light');
+                }
+            }, [isDarkMode]);
+
+            useEffect(() => {
+                let interval = null;
+                if (timerActive && timeLeft > 0) {
+                    interval = setInterval(() => {
+                        setTimeLeft(t => t - 1);
+                        if (activeTimerTaskId && timerMode === 'work') {
+                            setTasks(prev => prev.map(t => {
+                                if (t.id === activeTimerTaskId) {
+                                    const todayStr = formatDate(new Date());
+                                    const currentLog = t.timeLog || {};
+                                    return { ...t, timeLog: { ...currentLog, [todayStr]: (currentLog[todayStr] || 0) + 1 } };
+                                }
+                                return t;
+                            }));
+                        }
+                    }, 1000);
+                } else if (timerActive && timeLeft === 0) {
+                    // Auto switch
+                    if (timerMode === 'work') {
+                        setTimerMode('break');
+                        setTimeLeft(5 * 60);
+                        setTimerActive(false);
+                    } else {
+                        setTimerMode('work');
+                        setTimeLeft(25 * 60);
+                        setTimerActive(false);
+                    }
+                    try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play(); } catch (e) { }
+                }
+                return () => clearInterval(interval);
+            }, [timerActive, timeLeft, timerMode, activeTimerTaskId]);
+
+            const toggleTimer = () => setTimerActive(!timerActive);
+            const resetTimer = () => {
+                setTimerActive(false);
+                setTimeLeft(timerMode === 'work' ? 25 * 60 : 5 * 60);
+            };
+            const switchTimerMode = (mode) => {
+                setTimerMode(mode);
+                setTimerActive(false);
+                setTimeLeft(mode === 'work' ? 25 * 60 : 5 * 60);
+            };
+
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [newTaskTitle, setNewTaskTitle] = useState("");
+            const [newTaskEndDate, setNewTaskEndDate] = useState(formatDate(new Date(Date.now() + 86400000)));
+            const [newTaskStatus, setNewTaskStatus] = useState("Active");
+            const [searchQuery, setSearchQuery] = useState("");
+
+            const [currentDisplayDate, setCurrentDisplayDate] = useState(new Date());
+            const [selectedDate, setSelectedDate] = useState(todayObj.getDate());
+
+            const [newLink, setNewLink] = useState("");
+
+            const displayYear = currentDisplayDate.getFullYear();
+            const displayMonth = currentDisplayDate.getMonth() + 1; // 1-12
+
+            // --- Helpers ---
+            const getDaysRemainingText = (endDateStr) => {
+                if (!endDateStr) return null;
+                const end = new Date(endDateStr);
+                end.setHours(23, 59, 59, 999);
+                const now = new Date();
+                const diffTime = end - now;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays < 0) return <span className="text-red-500 font-bold bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-md">期限切れ</span>;
+                if (diffDays === 0) return <span className="text-red-500 font-bold bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-md">今日締切！</span>;
+                if (diffDays <= 3) return <span className="text-orange-500 font-bold bg-orange-100 dark:bg-orange-900/30 px-2 py-0.5 rounded-md">あと {diffDays} 日</span>;
+                return <span className="text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-md flex-shrink-0">残り {diffDays} 日</span>;
+            };
+
+            const formatTime = (sec) => {
+                if (!sec) return '0s';
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60);
+                const s = sec % 60;
+                if (h > 0) return `${h}h ${m}m ${s}s`;
+                if (m > 0) return `${m}m ${s}s`;
+                return `${s}s`;
+            };
+
+            const formatShortTime = (sec) => {
+                if (!sec) return '';
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60);
+                if (h > 0 && m > 0) return `${h}h ${m}m`;
+                if (h > 0) return `${h}h`;
+                if (m > 0) return `${m}m`;
+                return `<1m`;
+            };
+
+            const formatShortDate = (dateStr) => {
+                if (!dateStr) return "-";
+                const d = new Date(dateStr);
+                return `${d.getMonth() + 1}/${d.getDate()}`;
+            };
+
+            const isWithinInterval = (year, month, day, startStr, endStr) => {
+                if (!startStr || !endStr) return false;
+                const d = new Date(year, month - 1, day);
+                const start = new Date(startStr);
+                const end = new Date(endStr);
+                start.setHours(0, 0, 0, 0);
+                end.setHours(23, 59, 59, 999);
+                return d >= start && d <= end;
+            };
+
+            const addTaskFromTemplate = (template) => {
+                const todayStr = formatDate(todayObj);
+                const nextWeek = new Date(todayObj);
+                nextWeek.setDate(nextWeek.getDate() + 7);
+
+                const newTask = {
+                    id: Date.now(),
+                    title: `${template.name}の新規作業`,
+                    description: '',
+                    thumbnail: template.color.replace('bg-', 'bg-gradient-to-br from-') + ' to-zinc-400',
+                    status: 'Active',
+                    progress: 0,
+                    steps: template.steps,
+                    currentStep: 0,
+                    startDate: todayStr,
+                    endDate: formatDate(nextWeek),
+                    tags: [template.name],
+                    memo: '',
+                    links: [],
+                    timeLog: {}
+                };
+                setTasks(prevTasks => [newTask, ...prevTasks]);
+                setSelectedTask(newTask);
+                setShowAddModal(false);
+            };
+
+            const addTaskManual = (e) => {
+                e.preventDefault();
+                if (!newTaskTitle.trim()) return;
+                const newTask = {
+                    id: Date.now(),
+                    title: newTaskTitle,
+                    description: '',
+                    thumbnail: 'bg-gradient-to-br from-zinc-500 to-zinc-400',
+                    status: newTaskStatus,
+                    progress: newTaskStatus === 'Completed' ? 100 : 0,
+                    steps: ['ToDo'],
+                    currentStep: 0,
+                    startDate: formatDate(new Date()),
+                    endDate: newTaskEndDate,
+                    tags: [],
+                    memo: '',
+                    links: [],
+                    timeLog: {}
+                };
+                setTasks(prevTasks => [newTask, ...prevTasks]);
+                setShowAddModal(false);
+                setNewTaskTitle("");
+                setNewTaskStatus("Active");
+                // Resetting date is optional, keeping it to next day
+            };
+
+            const toggleComplete = (id, e) => {
+                e.stopPropagation();
+                // Find if it's currently completed or active
+                const targetTask = tasks.find(t => t.id === id);
+                if (!targetTask) return;
+
+                // Animate vanishing
+                setAnimatingTaskIds(prev => [...prev, id]);
+
+                setTimeout(() => {
+                    setTasks(prevTasks => prevTasks.map(t => {
+                        if (t.id === id) {
+                            const newStatus = t.status === 'Completed' ? 'Active' : 'Completed';
+                            return { ...t, status: newStatus, progress: newStatus === 'Completed' ? 100 : t.progress };
+                        }
+                        return t;
+                    }));
+                    setAnimatingTaskIds(prev => prev.filter(taskId => taskId !== id));
+                }, 400);
+            };
+
+            const updateTaskField = (id, field, value) => {
+                setTasks(prevTasks => prevTasks.map(t => t.id === id ? { ...t, [field]: value } : t));
+            };
+
+            // --- Component Views ---
+
+            const TaskItem = ({ task, dateContext }) => {
+                const isAnimating = animatingTaskIds.includes(task.id);
+                const displaySeconds = dateContext && task.timeLog ? task.timeLog[dateContext] : null;
+
+                return (
+                    <GlassCard
+                        className={`overflow-hidden cursor-pointer group relative transition-all duration-400 ease-in-out transform origin-top ${isAnimating ? 'opacity-0 scale-95 -translate-y-4' : 'opacity-100 scale-100 translate-y-0'} ${task.status === 'Completed' && !isAnimating ? 'opacity-60 grayscale-[0.3]' : ''}`}
+                        onClick={() => setSelectedTask(task)}
+                    >
+                        <div className="p-4 flex gap-4">
+                            <button
+                                onClick={(e) => toggleComplete(task.id, e)}
+                                className={`shrink-0 self-center w-8 h-8 rounded-full border-[1.5px] flex items-center justify-center transition-all ${task.status === 'Completed'
+                                    ? 'bg-blue-500 border-blue-500 text-white shadow-md shadow-blue-500/30'
+                                    : 'border-zinc-300 dark:border-zinc-600 text-transparent hover:border-blue-400'
+                                    }`}
+                            >
+                                <CheckCircle size={18} fill={task.status === 'Completed' ? "currentColor" : "none"} strokeWidth={2.5} />
+                            </button>
+
+                            <div className={`w-14 h-14 rounded-[1.2rem] shrink-0 ${task.thumbnail} flex items-center justify-center text-white/50 relative overflow-hidden shadow-inner`}>
+                                <ImageIcon size={22} className="text-white/80" />
+                            </div>
+
+                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                <h3 className={`font-bold text-[15px] text-zinc-900 dark:text-zinc-100 truncate transition-all ${task.status === 'Completed' ? 'line-through text-zinc-400' : ''}`}>
+                                    {task.title}
+                                </h3>
+                                <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-semibold mt-1.5 flex-wrap">
+                                    <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/80 px-2 py-0.5 rounded-md">
+                                        <CalendarDays size={12} className="text-zinc-400" />
+                                        {formatShortDate(task.startDate)} - {formatShortDate(task.endDate)}
+                                    </span>
+                                    {getDaysRemainingText(task.endDate)}
+                                    {displaySeconds !== null && displaySeconds > 0 && (
+                                        <span className="flex items-center gap-1.5 bg-white/60 dark:bg-black/40 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-xl shadow-[inset_0_2px_10px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_2px_10px_rgba(0,0,0,0.4)] backdrop-blur-md font-black tracking-widest text-[10px] tabular-nums mx-1 transition-all border border-white/50 dark:border-zinc-800/50">
+                                            <svg className="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                            {formatTime(displaySeconds)}
+                                        </span>
+                                    )}
+                                    {displaySeconds === null && Object.values(task.timeLog || {}).reduce((a, b) => a + b, 0) > 0 && (
+                                        <span className="flex items-center gap-1.5 bg-white/60 dark:bg-black/40 text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-xl shadow-[inset_0_2px_10px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_2px_10px_rgba(0,0,0,0.4)] backdrop-blur-md font-black tracking-widest text-[10px] tabular-nums mx-1 transition-all border border-white/50 dark:border-zinc-800/50">
+                                            <svg className="w-3 h-3 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                            {formatTime(Object.values(task.timeLog || {}).reduce((a, b) => a + b, 0))}
+                                        </span>
+                                    )}
+                                    <span className="text-blue-600 dark:text-blue-400 uppercase tracking-wide font-bold ml-auto">
+                                        {task.progress}%
+                                    </span>
+                                </div>
+                                {/* Progress Bar */}
+                                <div className="mt-3 h-1.5 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                    <div
+                                        className={`h-full transition-all duration-500 ${task.progress >= 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                                        style={{ width: `${task.progress || 0}%` }}
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1 self-center">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (confirm('このタスクを削除しますか？')) {
+                                            setTasks(prevTasks => prevTasks.filter(t => t.id !== task.id));
+                                        }
+                                    }}
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                    title="タスクを削除"
+                                >
+                                    <Trash2 size={16} strokeWidth={2.5} />
+                                </button>
+                                <ChevronRight className="text-zinc-300 group-hover:text-blue-500 transition-colors" size={20} />
+                            </div>
+                        </div>
+                    </GlassCard>
+                );
+            };
+
+            const renderHome = () => (
+                <div className="p-6 pb-32 max-w-2xl mx-auto space-y-8 animate-[fadeIn_0.5s_ease-out]">
+                    <header className="mt-10 flex justify-between items-end">
+                        <div>
+                            <p className="text-zinc-500 text-sm font-semibold mb-1 uppercase tracking-wider">{displayMonth}月{todayObj.getDate()}日</p>
+                            <h1 className="text-[2.5rem] font-black tracking-tight text-zinc-900 dark:text-white leading-none">FlowTasks</h1>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setIsDarkMode(!isDarkMode)}
+                                className="w-14 h-14 bg-white/80 dark:bg-zinc-800/80 shadow-sm border border-white/50 dark:border-zinc-700/50 backdrop-blur-md rounded-full flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors active:scale-95"
+                            >
+                                {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
+                            </button>
+                            <button
+                                onClick={() => setShowAddModal(true)}
+                                className="w-14 h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-full flex items-center justify-center shadow-xl shadow-blue-500/30 transition-transform active:scale-90"
+                            >
+                                <Plus size={28} strokeWidth={2.5} />
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="relative group mt-6">
+                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors" size={20} />
+                        <input
+                            type="text"
+                            placeholder="タスク、工程、タグで検索..."
+                            className="w-full bg-white/60 dark:bg-zinc-800/50 backdrop-blur-md border border-white/40 shadow-sm rounded-full py-4 pl-14 pr-6 focus:ring-4 ring-blue-500/10 transition-all outline-none text-zinc-900 dark:text-white font-medium placeholder:text-zinc-400"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="flex bg-zinc-200/50 dark:bg-zinc-800/50 p-1 rounded-2xl max-w-xs mx-auto mb-6">
+                        <button
+                            onClick={() => setHomeFilter('Active')}
+                            className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${homeFilter === 'Active' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                        >
+                            進行中
+                        </button>
+                        <button
+                            onClick={() => setHomeFilter('Completed')}
+                            className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${homeFilter === 'Completed' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                        >
+                            完了済み
+                        </button>
+                    </div>
+
+                    <section className="space-y-5 relative">
+                        <div className="flex justify-between items-center px-2">
+                            <h2 className="text-xs font-black text-zinc-400 uppercase tracking-widest">{homeFilter === 'Active' ? 'Active Projects' : 'Completed Projects'}</h2>
+                            <span className="text-[10px] bg-zinc-200/50 dark:bg-zinc-800/50 px-2 py-1 rounded-full text-zinc-500 font-bold">
+                                {tasks.filter(t => (homeFilter === 'Completed' ? t.status === 'Completed' : t.status !== 'Completed')).length} PROJECTS
+                            </span>
+                        </div>
+                        <div className="space-y-4">
+                            {tasks
+                                .filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                                .filter(t => homeFilter === 'Completed' ? t.status === 'Completed' : t.status !== 'Completed')
+                                .map(task => (
+                                    <TaskItem key={task.id} task={task} />
+                                ))}
+                            {tasks.filter(t => homeFilter === 'Completed' ? t.status === 'Completed' : t.status !== 'Completed').length === 0 && (
+                                <div className="text-center py-12 text-zinc-400 font-bold text-sm">タスクがありません</div>
+                            )}
+                        </div>
+                    </section>
+                </div>
+            );
+
+            const renderCalendar = () => {
+                const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+                const daysInMonth = new Date(displayYear, displayMonth, 0).getDate();
+                const firstDayOfWeek = new Date(displayYear, displayMonth - 1, 1).getDay();
+
+                const blanks = Array.from({ length: firstDayOfWeek }).map((_, i) => null);
+                const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+                const allDays = [...blanks, ...days];
+
+                // 選択された日に被っている、またはその日に作業時間が記録されているタスクを表示
+                const selectedDateStr = `${displayYear}-${String(displayMonth).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`;
+                const tasksForDay = tasks.filter(t =>
+                    isWithinInterval(displayYear, displayMonth, selectedDate, t.startDate, t.endDate) ||
+                    (t.timeLog && t.timeLog[selectedDateStr] > 0)
+                );
+
+                const prevMonth = () => {
+                    const d = new Date(currentDisplayDate);
+                    d.setMonth(d.getMonth() - 1);
+                    setCurrentDisplayDate(d);
+                };
+
+                const nextMonth = () => {
+                    const d = new Date(currentDisplayDate);
+                    d.setMonth(d.getMonth() + 1);
+                    setCurrentDisplayDate(d);
+                };
+
+                return (
+                    <div className="p-6 pb-32 max-w-2xl mx-auto space-y-8 animate-[fadeIn_0.5s_ease-out]">
+                        <header className="mt-10 flex justify-between items-center px-1">
+                            <h2 className="text-[2.5rem] font-black tracking-tight text-zinc-900 dark:text-white leading-none">
+                                {displayYear} <span className="opacity-40">/</span> {displayMonth}月
+                            </h2>
+                            <div className="flex gap-2">
+                                <button onClick={prevMonth} className="w-10 h-10 bg-white/80 dark:bg-zinc-800/80 shadow-sm border border-white/50 dark:border-zinc-700/50 backdrop-blur-md rounded-full flex items-center justify-center text-zinc-600 dark:text-white hover:bg-zinc-50 transition-colors"><ChevronLeft size={20} strokeWidth={2.5} /></button>
+                                <button onClick={nextMonth} className="w-10 h-10 bg-white/80 dark:bg-zinc-800/80 shadow-sm border border-white/50 dark:border-zinc-700/50 backdrop-blur-md rounded-full flex items-center justify-center text-zinc-600 dark:text-white hover:bg-zinc-50 transition-colors"><ChevronRight size={20} strokeWidth={2.5} /></button>
+                            </div>
+                        </header>
+
+                        <GlassCard className="p-6">
+                            <div className="grid grid-cols-7 gap-1 text-center mb-6">
+                                {dayNames.map((d, i) => (
+                                    <span key={d} className={`text-[10px] font-black tracking-widest ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-zinc-400'}`}>{d}</span>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-7 gap-y-4 gap-x-1 pb-4">
+                                {allDays.map((d, index) => {
+                                    if (d === null) return <div key={`blank-${index}`} />;
+
+                                    const isSelected = d === selectedDate;
+                                    const isToday = d === todayObj.getDate() && displayMonth === (todayObj.getMonth() + 1) && displayYear === todayObj.getFullYear();
+
+                                    const currentDateStr = `${displayYear}-${String(displayMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                                    const dayTasksWithTime = tasks.filter(t => t.timeLog && t.timeLog[currentDateStr] > 0);
+                                    const dayTotalSeconds = dayTasksWithTime.reduce((sum, t) => sum + t.timeLog[currentDateStr], 0);
+
+                                    // Task bars logic
+                                    const dayTasks = tasks.filter(t => t.status !== 'Completed' && isWithinInterval(displayYear, displayMonth, d, t.startDate, t.endDate));
+                                    const hasDeadline = dayTasks.some(t => {
+                                        if (!t.endDate) return false;
+                                        const ed = new Date(t.endDate);
+                                        return ed.getDate() === d && (ed.getMonth() + 1) === displayMonth && ed.getFullYear() === displayYear && t.status !== 'Completed';
+                                    });
+
+                                    return (
+                                        <div
+                                            key={d}
+                                            onClick={() => setSelectedDate(d)}
+                                            className="flex flex-col items-center relative cursor-pointer group h-[5rem]"
+                                        >
+                                            <div className={`w-10 h-10 flex items-center justify-center rounded-xl font-bold text-[14px] z-10 transition-all duration-300 ${isSelected
+                                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/40 scale-105'
+                                                : isToday
+                                                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 ring-1 ring-blue-500/30'
+                                                    : hasDeadline
+                                                        ? 'bg-red-500/5 text-red-600 dark:bg-red-500/10 dark:text-red-400 group-hover:bg-red-500/10'
+                                                        : 'text-zinc-800 dark:text-zinc-200 group-hover:bg-zinc-100 dark:group-hover:bg-zinc-800/50'
+                                                }`}>
+                                                {d}
+                                                {hasDeadline && !isSelected && (
+                                                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-zinc-900 shadow-sm"></span>
+                                                )}
+                                                {hasDeadline && isSelected && (
+                                                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-zinc-900 shadow-sm"></span>
+                                                )}
+                                            </div>
+
+                                            {/* Apple-like bars */}
+                                            <div className="absolute top-[2.4rem] left-0 right-0 flex flex-col gap-[2px] pt-1 z-0 px-[1px]">
+                                                {dayTasks.slice(0, dayTasks.length > 3 ? 2 : 3).map(t => {
+                                                    const st = new Date(t.startDate);
+                                                    const ed = new Date(t.endDate);
+                                                    const isStart = st.getDate() === d && (st.getMonth() + 1) === displayMonth && st.getFullYear() === displayYear;
+                                                    const isEnd = ed.getDate() === d && (ed.getMonth() + 1) === displayMonth && ed.getFullYear() === displayYear;
+
+                                                    // Bar colors
+                                                    const isWaiting = t.status === 'Waiting';
+
+                                                    let barColor = 'bg-blue-500/80 text-white dark:bg-blue-500/70'; // Active
+                                                    if (isWaiting) barColor = 'bg-orange-400/80 text-white dark:bg-orange-400/70';
+                                                    else if (t.status === 'Not Started') barColor = 'bg-zinc-200/50 dark:bg-zinc-600/50 text-zinc-600 dark:text-zinc-200';
+
+                                                    const isStartOfWeek = index % 7 === 0;
+
+                                                    return (
+                                                        <div
+                                                            key={t.id}
+                                                            title={t.title}
+                                                            onClick={(e) => { e.stopPropagation(); setSelectedTask(t); }}
+                                                            className={`h-[14px] flex items-center ${isStart ? 'ml-[3px] rounded-l-full' : '-ml-[2px]'} ${isEnd ? 'mr-[3px] rounded-r-full' : '-mr-[2px]'} ${barColor} backdrop-blur-md overflow-hidden shadow-sm relative group/bar hover:opacity-90 transition-opacity blur-[0.2px] hover:blur-none`}
+                                                        >
+                                                            <div className="flex px-2 items-center w-full">
+                                                                {(isStart || isStartOfWeek) && (
+                                                                    <span className="text-[8.5px] font-bold truncate leading-[1.2] pt-[1px] tracking-wide shadow-black/10 drop-shadow-sm">{t.title}</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {dayTasks.length > 3 && (
+                                                    <div className="text-[9px] font-bold text-zinc-400 dark:text-zinc-500 text-center w-full mt-[1px]">
+                                                        + 残り{dayTasks.length - 2}件
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {dayTotalSeconds > 0 && (
+                                                <div className="absolute bottom-0 w-full flex justify-center z-10 pointer-events-none pb-1">
+                                                    <span className="bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 px-2 py-[2px] rounded-full text-[10px] sm:text-[11px] font-black shadow-sm flex items-center justify-center gap-1 border border-blue-200 dark:border-blue-700/50 backdrop-blur-md group-hover:bg-blue-200 dark:group-hover:bg-blue-800/60 transition-colors">
+                                                        <Clock size={10} strokeWidth={2.5} />
+                                                        {formatShortTime(dayTotalSeconds)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </GlassCard>
+
+                        <section className="space-y-5">
+                            <div className="flex justify-between items-center px-1">
+                                <h3 className="text-sm font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                                    <CalendarIcon size={16} />
+                                    {displayMonth}月{selectedDate}日のタスク
+                                </h3>
+                                {tasksForDay.some(t => t.timeLog && t.timeLog[selectedDateStr] > 0) && (
+                                    <span className="text-[11px] font-black tracking-widest text-blue-600 bg-white/60 border border-white/50 dark:bg-black/40 dark:border-zinc-800/50 dark:text-blue-400 px-3 py-1 rounded-xl shadow-[inset_0_2px_10px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_2px_10px_rgba(0,0,0,0.4)] backdrop-blur-md">
+                                        合計作業: {formatShortTime(tasksForDay.reduce((sum, t) => sum + (t.timeLog && t.timeLog[selectedDateStr] ? t.timeLog[selectedDateStr] : 0), 0))}
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="space-y-4 animate-[slideUp_0.3s_ease-out]" key={`${displayYear}-${displayMonth}-${selectedDate}`}>
+                                {tasksForDay.length > 0 ? (
+                                    tasksForDay.map(task => <TaskItem key={task.id} task={task} dateContext={selectedDateStr} />)
+                                ) : (
+                                    <GlassCard className="text-center py-16 bg-white/30 dark:bg-zinc-900/10 border-dashed">
+                                        <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-300">
+                                            <Clock size={28} strokeWidth={2} />
+                                        </div>
+                                        <p className="text-zinc-500 font-bold text-sm">この日の予定はありません</p>
+                                    </GlassCard>
+                                )}
+                            </div>
+                        </section>
+                    </div>
+                );
+            };
+
+            const renderPomodoro = () => {
+                const totalTime = timerMode === 'work' ? 25 * 60 : 5 * 60;
+                const progress = ((totalTime - timeLeft) / totalTime) * 100;
+                const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+                const s = (timeLeft % 60).toString().padStart(2, '0');
+
+                return (
+                    <div className="p-6 pb-32 max-w-2xl mx-auto space-y-8 animate-[fadeIn_0.5s_ease-out] flex flex-col items-center">
+                        <header className="mt-10 w-full text-center">
+                            <h2 className="text-[2.5rem] font-black tracking-tight text-zinc-900 dark:text-white leading-none">Focus</h2>
+                            {activeTimerTaskId && (
+                                <div className="mt-4 flex items-center justify-center gap-2">
+                                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">
+                                        集中タスク: {tasks.find(t => t.id === activeTimerTaskId)?.title}
+                                    </span>
+                                    <button onClick={() => setActiveTimerTaskId(null)} className="text-zinc-400 hover:text-red-500 transition-colors p-1 bg-white dark:bg-zinc-800 rounded-full shadow-sm" title="紐付け解除">
+                                        <X size={14} strokeWidth={3} />
+                                    </button>
+                                </div>
+                            )}
+                        </header>
+
+                        <div className="flex gap-4 p-1.5 bg-white/60 dark:bg-zinc-800/50 backdrop-blur-md rounded-full shadow-sm border border-zinc-200/50 dark:border-zinc-700/50">
+                            <button onClick={() => switchTimerMode('work')} className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${timerMode === 'work' ? 'bg-blue-600 text-white shadow-md' : 'text-zinc-500 hover:bg-white/50 dark:hover:bg-zinc-700/50'}`}>Work</button>
+                            <button onClick={() => switchTimerMode('break')} className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${timerMode === 'break' ? 'bg-emerald-500 text-white shadow-md' : 'text-zinc-500 hover:bg-white/50 dark:hover:bg-zinc-700/50'}`}>Break</button>
+                        </div>
+
+                        <div className="relative w-80 h-80 sm:w-96 sm:h-96 flex items-center justify-center mt-8 mb-4">
+                            <svg className="absolute w-full h-full transform -rotate-90" viewBox="0 0 256 256">
+                                <circle cx="128" cy="128" r="116" stroke="currentColor" strokeWidth="16" fill="transparent" className="text-zinc-200 dark:text-zinc-800/80" />
+                                <circle cx="128" cy="128" r="116" stroke="currentColor" strokeWidth="16" strokeLinecap="round" fill="transparent"
+                                    strokeDasharray={116 * 2 * Math.PI}
+                                    strokeDashoffset={(116 * 2 * Math.PI) * (1 - progress / 100)}
+                                    className={`transition-all duration-1000 ease-linear ${timerMode === 'work' ? 'text-blue-500 drop-shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'text-emerald-500 drop-shadow-[0_0_12px_rgba(16,185,129,0.4)]'}`} />
+                            </svg>
+                            <div className="text-center z-10 flex flex-col items-center">
+                                <h1 className="text-[5.5rem] sm:text-[6.5rem] font-black tabular-nums tracking-tighter text-zinc-900 dark:text-white leading-none">
+                                    {m}:{s}
+                                </h1>
+                                <p className="text-sm sm:text-base font-black uppercase tracking-widest text-zinc-400 mt-2 sm:mt-4">{timerMode === 'work' ? 'Stay Focused' : 'Take a breath'}</p>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4 mt-8">
+                            <button onClick={toggleTimer} className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-90 text-white ${timerActive ? 'bg-red-500 hover:bg-red-400 shadow-red-500/30' : (timerMode === 'work' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/30' : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/30')}`}>
+                                {timerActive ? (
+                                    <SVGIcon d='<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>' size={28} />
+                                ) : (
+                                    <SVGIcon d='<polygon points="5 3 19 12 5 21 5 3"/>' size={28} className="ml-1" fill="currentColor" />
+                                )}
+                            </button>
+                            <button onClick={resetTimer} className="w-16 h-16 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center shadow-md transition-transform active:scale-90 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
+                                <SVGIcon d='<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>' size={24} />
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            const renderDetail = () => {
+                if (!selectedTask) return null;
+                const task = tasks.find(t => t.id === selectedTask.id);
+                if (!task) return null;
+
+                const isActive = activeTimerTaskId === task.id;
+                const todayStr = formatDate(new Date());
+                const todaySeconds = (task.timeLog && task.timeLog[todayStr]) || 0;
+                const totalSeconds = Object.values(task.timeLog || {}).reduce((a, b) => a + b, 0);
+
+                return (
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-[fadeIn_0.3s_ease-out]">
+                        <div className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm" onClick={() => setSelectedTask(null)} />
+                        <div className={`w-full max-w-2xl h-[95vh] sm:h-[90vh] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl rounded-t-[2.5rem] sm:rounded-[2.5rem] overflow-hidden relative shadow-[0_-10px_40px_rgb(0,0,0,0.1)] flex flex-col transform transition-transform animate-[slideUp_0.4s_ease-out]`}>
+
+                            <div className={`shrink-0 min-h-[12rem] w-full ${task.thumbnail} flex flex-col justify-end px-8 pb-8 pt-12 relative`}>
+                                <button onClick={() => setSelectedTask(null)} className="absolute top-6 right-6 w-10 h-10 bg-black/20 hover:bg-black/30 backdrop-blur-md rounded-full flex items-center justify-center text-white transition-colors">
+                                    <X size={20} strokeWidth={2.5} />
+                                </button>
+                                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mt-8">
+                                    <input
+                                        className="bg-transparent border-none text-white text-[2rem] font-black focus:ring-0 w-full p-0 placeholder:text-white/50 outline-none leading-tight"
+                                        value={task.title}
+                                        onChange={(e) => updateTaskField(task.id, 'title', e.target.value)}
+                                        placeholder="タスクタイトル..."
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            setActiveTimerTaskId(task.id);
+                                            setActiveTab('pomodoro');
+                                            if (!timerActive) {
+                                                setTimerMode('work');
+                                                setTimeLeft(25 * 60);
+                                                setTimerActive(true);
+                                            }
+                                            setSelectedTask(null);
+                                        }}
+                                        className="relative overflow-hidden shrink-0 flex items-center gap-3 px-6 py-3.5 rounded-2xl bg-white/70 dark:bg-zinc-800/70 border border-white/80 dark:border-zinc-700/80 text-zinc-800 dark:text-white font-black transition-all hover:-translate-y-1 active:scale-95 shadow-xl backdrop-blur-xl group"
+                                    >
+                                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 transition-opacity blur-xl"></div>
+                                        <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/40 border border-blue-100 dark:border-blue-800/50 flex items-center justify-center group-hover:bg-blue-100 dark:group-hover:bg-blue-800 transition-colors z-10 shadow-inner">
+                                            <Play size={14} className="text-blue-600 dark:text-blue-400 ml-0.5 group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors" fill="currentColor" />
+                                        </div>
+                                        <div className="flex flex-col items-start z-10 leading-none">
+                                            <span className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-widest font-bold mb-0.5">Start Timer</span>
+                                            <span className="text-[14px] tracking-wide text-zinc-900 dark:text-white group-hover:text-blue-700 dark:group-hover:text-blue-300 transition-colors">タイマー開始</span>
+                                        </div>
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-2 mt-4 flex-wrap">
+                                    <div className="flex items-center gap-2 text-zinc-900 dark:text-white text-[13px] font-bold bg-white/80 dark:bg-black/40 border border-white/50 dark:border-zinc-800 w-fit px-4 py-2 rounded-xl backdrop-blur-md shadow-sm">
+                                        <Zap size={16} className="fill-current text-yellow-500" />
+                                        <span>{task.steps[task.currentStep]} 工程</span>
+                                    </div>
+                                    {totalSeconds > 0 && (
+                                        <div className="flex flex-col justify-center bg-white/60 dark:bg-black/40 border border-white/60 dark:border-zinc-800 w-fit px-5 py-2 rounded-2xl backdrop-blur-xl shadow-lg text-zinc-800 dark:text-white group cursor-default">
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400 mb-0.5 leading-none">Logged Time</span>
+                                            <div className="flex items-center gap-2 leading-none">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></div>
+                                                <span className="text-[15px] font-black tabular-nums tracking-wider">{formatTime(totalSeconds)}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto px-8 py-8 space-y-10 no-scrollbar">
+
+                                {/* 期間設定 */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-2 text-zinc-400 px-1">
+                                        <CalendarDays size={18} />
+                                        <h3 className="text-xs font-black uppercase tracking-widest">Schedule</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2 relative group">
+                                            <label className="text-[10px] font-black text-zinc-400 ml-1 uppercase">開始日</label>
+                                            <input
+                                                type="date"
+                                                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 text-sm font-semibold focus:ring-4 ring-blue-500/20 dark:text-white outline-none transition-all hover:bg-zinc-100"
+                                                value={task.startDate}
+                                                onChange={(e) => updateTaskField(task.id, 'startDate', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2 relative group">
+                                            <label className="text-[10px] font-black text-zinc-400 ml-1 uppercase">締切日</label>
+                                            <input
+                                                type="date"
+                                                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 text-sm font-semibold focus:ring-4 ring-blue-500/20 dark:text-white outline-none transition-all hover:bg-zinc-100"
+                                                value={task.endDate}
+                                                onChange={(e) => updateTaskField(task.id, 'endDate', e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Workflow Progress Slider */}
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center px-1">
+                                        <div className="flex items-center gap-2 text-zinc-400">
+                                            <Zap size={18} />
+                                            <h3 className="text-xs font-black uppercase tracking-widest">Progress</h3>
+                                        </div>
+                                        <span className="text-xl font-black text-blue-500">{task.progress || 0}%</span>
+                                    </div>
+                                    <div className="px-1 py-1">
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={task.progress || 0}
+                                            onChange={(e) => updateTaskField(task.id, 'progress', parseInt(e.target.value))}
+                                            className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-500 transition-all [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:rounded-full"
+                                        />
+                                    </div>
+                                    <div className="flex gap-3 overflow-x-auto no-scrollbar pb-4 p-1 mt-2">
+                                        {task.steps.map((step, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => {
+                                                    updateTaskField(task.id, 'currentStep', i);
+                                                    if (task.progress < 100) {
+                                                        const prog = Math.round(((i + 1) / task.steps.length) * 100);
+                                                        updateTaskField(task.id, 'progress', prog);
+                                                    }
+                                                }}
+                                                className={`shrink-0 px-7 py-4 rounded-2xl text-[13px] font-bold transition-all border-[1.5px] ${i === task.currentStep
+                                                    ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105'
+                                                    : i < task.currentStep
+                                                        ? 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/20 dark:border-blue-800'
+                                                        : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:border-zinc-300'
+                                                    }`}
+                                            >
+                                                {step}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Memo Area */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-2 text-zinc-400 px-1">
+                                        <FileText size={18} />
+                                        <h3 className="text-xs font-black uppercase tracking-widest">Memo / URLs</h3>
+                                    </div>
+                                    <MemoEditor
+                                        value={task.memo}
+                                        onChange={(newMemo) => updateTaskField(task.id, 'memo', newMemo)}
+                                    />
+                                </div>
+
+                                {/* Reference Links */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-2 text-zinc-400 px-1">
+                                        <LinkIcon size={18} />
+                                        <h3 className="text-xs font-black uppercase tracking-widest">Reference Materials</h3>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            placeholder="https://... URLを追加"
+                                            className="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-5 py-4 text-sm font-medium focus:ring-4 ring-blue-500/20 outline-none dark:text-white transition-all hover:bg-zinc-100"
+                                            value={newLink}
+                                            onChange={(e) => setNewLink(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && (() => {
+                                                if (!newLink) return;
+                                                updateTaskField(task.id, 'links', [...task.links, newLink]);
+                                                setNewLink("");
+                                            })()}
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                if (!newLink) return;
+                                                updateTaskField(task.id, 'links', [...task.links, newLink]);
+                                                setNewLink("");
+                                            }}
+                                            className="w-[3.5rem] h-[3.5rem] shrink-0 bg-blue-600 text-white rounded-2xl flex items-center justify-center hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/30 active:scale-95"
+                                        >
+                                            <Plus size={24} strokeWidth={2.5} />
+                                        </button>
+                                    </div>
+                                    <div className="grid gap-3 mt-4">
+                                        {task.links.map((link, i) => (
+                                            <div key={i} className="flex items-center gap-4 p-4 bg-white dark:bg-zinc-800/80 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-[0_2px_10px_rgb(0,0,0,0.02)] group hover:shadow-[0_8px_20px_rgb(0,0,0,0.06)] transition-all">
+                                                <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                                                    <ExternalLink size={18} className="text-blue-600" />
+                                                </div>
+                                                <a href={link} target="_blank" rel="noopener noreferrer" className="flex-1 text-[13px] text-zinc-700 dark:text-zinc-200 truncate hover:text-blue-600 font-bold underline decoration-blue-200 underline-offset-4">{link}</a>
+                                                <button
+                                                    onClick={() => updateTaskField(task.id, 'links', task.links.filter((_, idx) => idx !== i))}
+                                                    className="p-2.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                                                >
+                                                    <Trash2 size={18} strokeWidth={2.5} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="pt-8 pb-4">
+                                    <button
+                                        onClick={() => { setTasks(prevTasks => prevTasks.filter(t => t.id !== task.id)); setSelectedTask(null); }}
+                                        className="w-full py-5 text-red-500 text-sm font-black bg-red-50 dark:bg-red-900/10 rounded-2xl flex items-center justify-center gap-2 hover:bg-red-100 transition-colors border border-red-100 dark:border-red-900/20"
+                                    >
+                                        <Trash2 size={18} strokeWidth={2.5} /> このタスクを完全に削除
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="min-h-screen relative font-sans">
+                    <main className="relative z-10 w-full">
+                        {activeTab === 'tasks' && renderHome()}
+                        {activeTab === 'calendar' && renderCalendar()}
+                        {activeTab === 'pomodoro' && renderPomodoro()}
+                        {activeTab === 'profile' && (
+                            <div className="p-6 flex flex-col items-center justify-center min-h-[80vh] dark:text-white animate-[zoomIn_0.4s_ease-out]">
+                                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white mb-8 shadow-2xl shadow-blue-500/20 border-4 border-white dark:border-zinc-900">
+                                    <User size={56} strokeWidth={2} />
+                                </div>
+                                <h2 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white">Profile</h2>
+                                <p className="text-zinc-500 text-[13px] font-bold mt-2 uppercase tracking-widest bg-zinc-200/50 px-3 py-1 rounded-full">v1.2 Liquid Glass Update</p>
+                                <div className="mt-10 max-w-sm w-full space-y-4">
+                                    <GlassCard className="p-5 flex items-center justify-between cursor-pointer active:scale-95 transition-all" onClick={() => setIsDarkMode(!isDarkMode)}>
+                                        <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">Dark Mode</span>
+                                        <div className={`w-12 h-6 rounded-full relative transition-colors ${isDarkMode ? 'bg-blue-500' : 'bg-zinc-300 dark:bg-zinc-700'}`}>
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${isDarkMode ? 'right-1' : 'left-1'}`}></div>
+                                        </div>
+                                    </GlassCard>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Bottom Tab Bar */}
+                    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-md h-[4.5rem] bg-white/70 dark:bg-zinc-900/70 backdrop-blur-2xl border border-white/50 dark:border-zinc-800/50 rounded-full shadow-[0_20px_40px_rgb(0,0,0,0.1)] flex items-center justify-around px-2 z-40">
+                        <NavItem active={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} icon={<Layout size={24} strokeWidth={activeTab === 'tasks' ? 2.5 : 2} />} label="Tasks" />
+                        <NavItem active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} icon={<CalendarIcon size={24} strokeWidth={activeTab === 'calendar' ? 2.5 : 2} />} label="Calendar" />
+                        <NavItem active={activeTab === 'pomodoro'} onClick={() => setActiveTab('pomodoro')} icon={<Clock size={24} strokeWidth={activeTab === 'pomodoro' ? 2.5 : 2} />} label="Focus" />
+                        <NavItem active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<User size={24} strokeWidth={activeTab === 'profile' ? 2.5 : 2} />} label="Profile" />
+                    </nav>
+
+                    {/* Floating Pomodoro Status */}
+                    {timerActive && activeTab !== 'pomodoro' && (
+                        <div className="fixed bottom-28 right-4 sm:right-8 z-50 animate-[slideUp_0.3s_ease-out]">
+                            <button onClick={() => setActiveTab('pomodoro')} className={`group flex items-center gap-3 px-5 sm:px-6 py-3 sm:py-4 rounded-3xl sm:rounded-[2rem] shadow-2xl transition-all border backdrop-blur-xl ${timerMode === 'work' ? 'bg-blue-600/90 hover:bg-blue-500 shadow-blue-500/40 border-blue-400/50 text-white' : 'bg-emerald-500/90 hover:bg-emerald-400 shadow-emerald-500/40 border-emerald-400/50 text-white'}`}>
+                                <div className={`hidden sm:flex items-center justify-center w-8 h-8 rounded-full ${timerMode === 'work' ? 'bg-blue-400/30' : 'bg-emerald-400/30'} backdrop-blur-sm group-hover:scale-110 transition-transform`}>
+                                    <div className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                                </div>
+                                <div className="flex flex-col items-start leading-none gap-1 sm:gap-1.5">
+                                    <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-white/80">{timerMode === 'work' ? 'Focusing' : 'Break Time'}</span>
+                                    <span className="text-xl sm:text-2xl font-black tracking-wide tabular-nums drop-shadow-sm">
+                                        {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
+                                    </span>
+                                </div>
+                                <Clock size={20} className="ml-1 sm:ml-2 opacity-60 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Task Detail Modal */}
+                    {renderDetail()}
+
+                    {/* Add Task Modal */}
+                    {showAddModal && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
+                            <div className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm" onClick={() => setShowAddModal(false)} />
+                            <div className="w-full max-w-sm p-8 space-y-6 relative bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl rounded-[2.5rem] shadow-[0_20px_60px_rgb(0,0,0,0.15)] animate-[zoomIn_0.3s_ease-out] border border-white/50 max-h-[90vh] overflow-y-auto no-scrollbar">
+                                <h2 className="text-xl font-black dark:text-white tracking-tight text-center">タスクの追加</h2>
+
+                                <form onSubmit={addTaskManual} className="space-y-4">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">タイトル</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={newTaskTitle}
+                                            onChange={(e) => setNewTaskTitle(e.target.value)}
+                                            placeholder="例: 新しいロゴのデザイン"
+                                            className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 text-sm font-semibold focus:ring-2 ring-blue-500/50 dark:text-white outline-none transition-all"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">納期 (締切日)</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={newTaskEndDate}
+                                            onChange={(e) => setNewTaskEndDate(e.target.value)}
+                                            className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 text-sm font-semibold focus:ring-2 ring-blue-500/50 dark:text-white outline-none transition-all"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">ステータス</label>
+                                        <select
+                                            value={newTaskStatus}
+                                            onChange={(e) => setNewTaskStatus(e.target.value)}
+                                            className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 text-sm font-semibold focus:ring-2 ring-blue-500/50 dark:text-white outline-none transition-all appearance-none"
+                                        >
+                                            <option value="Not Started">未着手 (Not Started)</option>
+                                            <option value="Active">制作中 (Active)</option>
+                                            <option value="Waiting">確認待ち (Waiting)</option>
+                                            <option value="Completed">完了 (Completed)</option>
+                                        </select>
+                                    </div>
+                                    <button
+                                        type="submit"
+                                        className="w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl py-4 font-bold shadow-lg shadow-blue-500/30 transition-all active:scale-95"
+                                    >
+                                        追加する
+                                    </button>
+                                </form>
+
+                                <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                                    <p className="text-xs font-bold text-zinc-400 text-center mb-4">またはテンプレートから作成</p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {TEMPLATES.map(template => (
+                                            <button
+                                                key={template.id}
+                                                type="button"
+                                                onClick={() => addTaskFromTemplate(template)}
+                                                className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 hover:bg-blue-50 hover:scale-[1.02] active:scale-95 transition-all border border-zinc-100 hover:border-blue-200 shadow-sm"
+                                            >
+                                                <div className={`w-10 h-10 rounded-xl ${template.color} text-white flex items-center justify-center text-lg shadow-sm`}>
+                                                    {template.icon}
+                                                </div>
+                                                <span className="text-[10px] font-black text-zinc-600 uppercase tracking-tight">{template.name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            @keyframes slideUp {
+              from { transform: translateY(100%); opacity: 0; }
+              to { transform: translateY(0); opacity: 1; }
+            }
+            @keyframes zoomIn {
+              from { transform: scale(0.95); opacity: 0; }
+              to { transform: scale(1); opacity: 1; }
+            }
+          `}</style>
+                </div>
+            );
+        };
+
+        const NavItem = ({ active, onClick, icon, label }) => (
+            <button onClick={onClick} className={`relative flex flex-col items-center justify-center w-16 h-full transition-all duration-300 ${active ? 'text-blue-600' : 'text-zinc-400 hover:text-zinc-500'}`}>
+                <div className={`relative transition-transform duration-300 ${active ? '-translate-y-2' : ''}`}>
+                    {icon}
+                </div>
+                <span className={`absolute bottom-3 text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${active ? 'opacity-100 transform translate-y-0' : 'opacity-0 transform translate-y-2'}`}>{label}</span>
+            </button>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
